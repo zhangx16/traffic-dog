@@ -4,7 +4,7 @@
 
 set -eu
 
-VERSION="1.2.0"
+VERSION="1.2.1"
 FAMILY="inet"
 TABLE="port_traffic_stat"
 CONFIG_DIR="${PTS_CONFIG_DIR:-/etc/port-traffic-stat}"
@@ -131,9 +131,10 @@ set_kv2() {
     file=$1
     key=$2
     val=$3
+    [ -n "$key" ] || die "internal error: empty key for $file"
     tmp="$file.$$"
     [ -f "$file" ] || : > "$file"
-    awk -v k="$key" '$1 != k { print }' "$file" > "$tmp"
+    awk -v k="$key" 'NF && $1 != k { print }' "$file" > "$tmp"
     printf '%s %s\n' "$key" "$val" >> "$tmp"
     mv "$tmp" "$file"
 }
@@ -143,7 +144,7 @@ remove_kv2() {
     key=$2
     tmp="$file.$$"
     [ -f "$file" ] || return 0
-    awk -v k="$key" '$1 != k { print }' "$file" > "$tmp"
+    awk -v k="$key" 'NF && $1 != k { print }' "$file" > "$tmp"
     mv "$tmp" "$file"
 }
 
@@ -414,9 +415,9 @@ save_port_snapshot() {
 save_all_snapshots() {
     ensure_files
     if nft list table "$FAMILY" "$TABLE" >/dev/null 2>&1; then
-        while IFS= read -r p; do
-            [ -n "$p" ] || continue
-            save_port_snapshot "$p"
+        while IFS= read -r snapshot_port_name; do
+            [ -n "$snapshot_port_name" ] || continue
+            save_port_snapshot "$snapshot_port_name"
         done < "$PORTS_FILE"
     fi
 }
@@ -429,9 +430,9 @@ rebuild_nft_rules() {
     nft delete table "$FAMILY" "$TABLE" >/dev/null 2>&1 || true
     add_table_and_chains
 
-    while IFS= read -r p; do
-        [ -n "$p" ] || continue
-        add_rules_for_port "$p"
+    while IFS= read -r rebuild_port_name; do
+        [ -n "$rebuild_port_name" ] || continue
+        add_rules_for_port "$rebuild_port_name"
     done < "$PORTS_FILE"
 }
 
@@ -601,31 +602,32 @@ cmd_limit() {
             ;;
         *)
             [ "$#" -eq 2 ] || die "usage: $0 limit PORT SIZE | $0 limit del PORT | $0 limit list"
-            p=$(normalize_port_spec "$1") || die "invalid port: $1"
-            size=$(parse_size_to_bytes "$2") || die "invalid size: $2 (examples: 500M, 10G, 1T)"
+            limit_port=$(normalize_port_spec "$1") || die "invalid port: $1"
+            [ -n "$limit_port" ] || die "invalid port: $1"
+            limit_size=$(parse_size_to_bytes "$2") || die "invalid size: $2 (examples: 500M, 10G, 1T)"
             need_root
             need_nft
             with_lock
             ensure_files
-            if ! grep -qxF "$p" "$PORTS_FILE" 2>/dev/null; then
-                printf '%s\n' "$p" >> "$PORTS_FILE"
-                set_state_line "$p" 0 0 "$(now_iso)"
+            if ! grep -qxF "$limit_port" "$PORTS_FILE" 2>/dev/null; then
+                printf '%s\n' "$limit_port" >> "$PORTS_FILE"
+                set_state_line "$limit_port" 0 0 "$(now_iso)"
                 sort_tmp="$PORTS_FILE.sort.$$"
                 sort -u "$PORTS_FILE" > "$sort_tmp"
                 mv "$sort_tmp" "$PORTS_FILE"
-                echo "added: $p"
+                echo "added: $limit_port"
             fi
             save_all_snapshots
-            used=$(port_saved_total "$p")
-            saved_used=$(used_get_bytes "$p")
-            if [ -n "$saved_used" ] && [ "$saved_used" -gt "$used" ]; then
-                used=$saved_used
+            limit_used=$(port_saved_total "$limit_port")
+            limit_saved_used=$(used_get_bytes "$limit_port")
+            if [ -n "$limit_saved_used" ] && [ "$limit_saved_used" -gt "$limit_used" ]; then
+                limit_used=$limit_saved_used
             fi
-            limit_set_bytes "$p" "$size"
-            used_set_bytes "$p" "$used"
+            limit_set_bytes "$limit_port" "$limit_size"
+            used_set_bytes "$limit_port" "$limit_used"
             rebuild_nft_rules
-            echo "limit set: $p => $(human_bytes "$size")"
-            if [ "$used" -ge "$size" ]; then
+            echo "limit set: $limit_port => $(human_bytes "$limit_size")"
+            if [ "$limit_used" -ge "$limit_size" ]; then
                 echo "current usage is already over limit; port is paused now."
             fi
             ;;
