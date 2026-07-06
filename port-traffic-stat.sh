@@ -5,7 +5,7 @@
 set -eu
 set -f
 
-VERSION="1.3.0"
+VERSION="1.3.1"
 FAMILY="inet"
 TABLE="port_traffic_stat"
 CONFIG_DIR="${PTS_CONFIG_DIR:-/etc/port-traffic-stat}"
@@ -946,6 +946,11 @@ menu_confirm() {
 }
 
 cmd_menu() {
+    if [ ! -t 0 ] || [ ! -t 1 ]; then
+        usage
+        return 0
+    fi
+
     while :; do
         if [ -t 1 ]; then
             clear 2>/dev/null || true
@@ -1124,7 +1129,11 @@ main() {
         cmd=$1
         shift
     else
-        cmd=menu
+        if [ -t 0 ] && [ -t 1 ]; then
+            cmd=menu
+        else
+            cmd=help
+        fi
     fi
 
     case "$cmd" in

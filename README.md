@@ -10,7 +10,7 @@ Alpine / Debian 通用的端口流量统计与限额暂停脚本。
 - Debian / Ubuntu，systemd
 - Debian 系 SysV init 环境，使用 `update-rc.d`
 
-> 依赖：`nftables`。一键脚本会自动安装 `nftables`、`ca-certificates`、`curl`。
+依赖：`nftables`。一键脚本会自动安装 `nftables`、`ca-certificates`、`curl`。
 
 ## 功能
 
@@ -21,6 +21,7 @@ Alpine / Debian 通用的端口流量统计与限额暂停脚本。
 - 支持单端口和端口段，例如 `80`、`443`、`10000-10100`
 - 支持 `input` / `output` / `forward` 链统计
 - 支持 OpenRC、systemd、SysV init 开机自动恢复规则
+- 支持交互式数字菜单
 - 不依赖 `bash`、`jq`、`bc`
 
 ## 一键安装
@@ -28,7 +29,7 @@ Alpine / Debian 通用的端口流量统计与限额暂停脚本。
 使用 `root` 执行：
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh
+wget -O- https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh
 ```
 
 如果系统没有 `wget`，可以使用：
@@ -37,7 +38,7 @@ Alpine：
 
 ```sh
 apk add --no-cache curl
-curl -fsSL https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh
+curl -fL https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh
 ```
 
 Debian / Ubuntu：
@@ -45,31 +46,31 @@ Debian / Ubuntu：
 ```sh
 apt-get update
 apt-get install -y ca-certificates curl
-curl -fsSL https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh
+curl -fL https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh
 ```
 
 一键安装并添加统计端口：
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh -s -- 80 443
+wget -O- https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh -s -- 80 443
 ```
 
 一键安装、添加端口，并给每个端口设置 10G 总流量限额：
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh -s -- --limit 10G 80 443
+wget -O- https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh -s -- --limit 10G 80 443
 ```
 
 端口段示例：
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh -s -- --limit 500M 10000-10100
+wget -O- https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh -s -- --limit 500M 10000-10100
 ```
 
 不安装开机服务：
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh -s -- --no-service 80 443
+wget -O- https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh -s -- --no-service 80 443
 ```
 
 ## 手动安装
@@ -266,6 +267,12 @@ port-traffic-stat restore
 port-traffic-stat flush
 ```
 
+更新脚本：
+
+```sh
+port-traffic-stat update
+```
+
 卸载脚本和启动服务，保留统计数据目录：
 
 ```sh
@@ -334,12 +341,34 @@ systemctl enable --now port-traffic-stat
 
 ## 常见问题
 
+### 安装命令执行后没有任何反馈
+
+不要使用静默参数 `wget -qO-`，下载失败时它可能不显示任何错误。请使用：
+
+```sh
+wget -O- https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh
+```
+
+或：
+
+```sh
+curl -fL https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh
+```
+
+安装后检查：
+
+```sh
+command -v port-traffic-stat
+ls -l /usr/local/bin/port-traffic-stat
+port-traffic-stat version
+```
+
 ### chmod: port-traffic-stat.sh: No such file or directory
 
 说明当前目录没有脚本文件。推荐直接使用一键安装：
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh
+wget -O- https://raw.githubusercontent.com/zhangx16/dog-alpine/main/install.sh | sh
 ```
 
 ### rules not loaded

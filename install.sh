@@ -19,6 +19,10 @@ die() {
     exit 1
 }
 
+log() {
+    echo "[dog-alpine] $*"
+}
+
 usage() {
     cat <<EOF
 dog-alpine one-click installer
@@ -91,16 +95,23 @@ download_file() {
     dest=$2
 
     if has curl; then
-        curl -fsSL "$url" -o "$dest"
+        curl -fL "$url" -o "$dest"
         return 0
     fi
 
     if has wget; then
-        wget -qO "$dest" "$url"
+        wget -O "$dest" "$url"
         return 0
     fi
 
     die "curl/wget not found"
+}
+
+validate_downloaded_script() {
+    file=$1
+    [ -s "$file" ] || die "downloaded script is empty; check network/DNS access to raw.githubusercontent.com"
+    grep -q 'port-traffic-stat' "$file" || die "downloaded file does not look like port-traffic-stat.sh"
+    /bin/sh -n "$file" || die "downloaded script has syntax errors"
 }
 
 for_each_port_arg() {
@@ -166,26 +177,31 @@ parse_args() {
 }
 
 main() {
+    log "installer started"
     parse_args "$@"
     need_root
 
     if [ "$INSTALL_DEPS" = "1" ]; then
+        log "installing dependencies if needed"
         install_deps
     fi
 
     tmp="${TMPDIR:-/tmp}/port-traffic-stat.$$"
     trap 'rm -f "$tmp" 2>/dev/null || true' EXIT INT TERM
 
-    echo "Downloading: $SCRIPT_URL"
+    log "downloading: $SCRIPT_URL"
     download_file "$SCRIPT_URL" "$tmp"
+    validate_downloaded_script "$tmp"
 
     mkdir -p "$(dirname "$INSTALL_PATH")"
     cp "$tmp" "$INSTALL_PATH"
     chmod +x "$INSTALL_PATH"
 
-    echo "Installed: $INSTALL_PATH"
+    log "installed: $INSTALL_PATH"
+    log "version: $("$INSTALL_PATH" version 2>/dev/null || echo unknown)"
 
     if [ "$INSTALL_SERVICE" = "1" ]; then
+        log "installing startup service"
         "$INSTALL_PATH" install-service || echo "Startup service installation skipped or unsupported."
     fi
 
