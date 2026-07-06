@@ -134,7 +134,7 @@ set_kv2() {
     [ -n "$key" ] || die "internal error: empty key for $file"
     tmp="$file.$$"
     [ -f "$file" ] || : > "$file"
-    awk -v k="$key" 'NF && $1 != k { print }' "$file" > "$tmp"
+    awk -v k="$key" 'NF >= 2 && $1 != k { print }' "$file" > "$tmp"
     printf '%s %s\n' "$key" "$val" >> "$tmp"
     mv "$tmp" "$file"
 }
@@ -144,7 +144,7 @@ remove_kv2() {
     key=$2
     tmp="$file.$$"
     [ -f "$file" ] || return 0
-    awk -v k="$key" 'NF && $1 != k { print }' "$file" > "$tmp"
+    awk -v k="$key" 'NF >= 2 && $1 != k { print }' "$file" > "$tmp"
     mv "$tmp" "$file"
 }
 
