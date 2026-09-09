@@ -1,0 +1,21 @@
+name: Shell regression tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install BusyBox
+        run: sudo apt-get update && sudo apt-get install -y busybox
+      - name: Check POSIX shell syntax
+        run: |
+          dash -n port-traffic-stat.sh
+          dash -n install.sh
+          busybox ash -n port-traffic-stat.sh
+          busybox ash -n install.sh
+      - name: Test with dash and BusyBox ash
+        run: |
+          dash tests/regression.sh
+          busybox ash tests/regression.sh
