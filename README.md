@@ -1,440 +1,83 @@
 # Traffic-dog
 
-Alpine / Debian 通用的端口流量统计与限额暂停脚本。
+基于 nftables 的端口流量统计与限额脚本，支持 TCP/UDP、单端口和端口段。达到 IN + OUT 总限额后，由内核自动丢弃该端口后续流量，无需常驻轮询。
 
-核心功能：使用 `nftables` 按端口统计 TCP/UDP 入站、出站、总流量；可为端口设置总流量限额，当该端口 `IN + OUT` 达到限额后，自动暂停该端口流量。
+支持 Alpine（OpenRC）、Debian/Ubuntu（systemd）及 Debian SysV init；使用 `/bin/sh`，无需 bash、jq 或 bc。
 
-## 支持系统
+## 安装
 
-- Alpine Linux，OpenRC
-- Debian / Ubuntu，systemd
-- Debian 系 SysV init 环境，使用 `update-rc.d`
-
-依赖：`nftables`。一键脚本会自动安装 `nftables`、`ca-certificates`、`curl`。
-
-## 功能
-
-- 使用 `/bin/sh`，兼容 BusyBox ash 和 Debian dash
-- 使用 `nftables` 计数器统计流量
-- 使用 `nftables quota` 实现内核级自动暂停，无需常驻轮询进程
-- 支持 TCP / UDP
-- 支持单端口和端口段，例如 `80`、`443`、`10000-10100`
-- 支持 `input` / `output` / `forward` 链统计
-- 支持 OpenRC、systemd、SysV init 开机自动恢复规则
-- 支持交互式数字菜单
-- 不依赖 `bash`、`jq`、`bc`
-
-## 一键安装
-
-使用 `root` 执行：
+以 root 执行，自动安装依赖和开机服务：
 
 ```sh
 wget -O- https://raw.githubusercontent.com/zhangx16/traffic-dog/main/install.sh | sh
 ```
 
-如果 GitHub raw 返回 `429 Too Many Requests`，使用 CDN 备用安装：
+GitHub raw 下载失败或返回 429 时使用 CDN：
 
 ```sh
 wget -O- https://cdn.jsdelivr.net/gh/zhangx16/traffic-dog@main/install.sh | sh
 ```
 
-如果系统没有 `wget`，可以使用：
-
-Alpine：
+也可用 `curl -fL URL | sh`。安装时可直接添加端口和限额：
 
 ```sh
-apk add --no-cache curl
-curl -fL https://raw.githubusercontent.com/zhangx16/traffic-dog/main/install.sh | sh
+wget -O- https://raw.githubusercontent.com/zhangx16/traffic-dog/main/install.sh | sh -s -- --limit 10G 80 443 10000-10100
 ```
 
-CDN 备用：
+安装选项：`--no-service` 跳过开机服务，`--no-deps` 跳过依赖安装，`--branch NAME` 指定分支，`--url URL` 指定脚本地址。
+
+systemd 安装后启动服务，以启用当前会话的关机保存：
 
 ```sh
-curl -fL https://cdn.jsdelivr.net/gh/zhangx16/traffic-dog@main/install.sh | sh
-```
-
-Debian / Ubuntu：
-
-```sh
-apt-get update
-apt-get install -y ca-certificates curl
-curl -fL https://raw.githubusercontent.com/zhangx16/traffic-dog/main/install.sh | sh
-```
-
-CDN 备用：
-
-```sh
-curl -fL https://cdn.jsdelivr.net/gh/zhangx16/traffic-dog@main/install.sh | sh
-```
-
-一键安装并添加统计端口：
-
-```sh
-wget -O- https://raw.githubusercontent.com/zhangx16/traffic-dog/main/install.sh | sh -s -- 80 443
-```
-
-一键安装、添加端口，并给每个端口设置 10G 总流量限额：
-
-```sh
-wget -O- https://raw.githubusercontent.com/zhangx16/traffic-dog/main/install.sh | sh -s -- --limit 10G 80 443
-```
-
-端口段示例：
-
-```sh
-wget -O- https://raw.githubusercontent.com/zhangx16/traffic-dog/main/install.sh | sh -s -- --limit 500M 10000-10100
-```
-
-不安装开机服务：
-
-```sh
-wget -O- https://raw.githubusercontent.com/zhangx16/traffic-dog/main/install.sh | sh -s -- --no-service 80 443
-```
-
-## 手动安装
-
-Alpine：
-
-```sh
-apk add --no-cache nftables ca-certificates curl
-```
-
-Debian / Ubuntu：
-
-```sh
-apt-get update
-apt-get install -y --no-install-recommends nftables ca-certificates curl
-```
-
-下载脚本：
-
-```sh
-wget -O /usr/local/bin/port-traffic-stat \
-  https://raw.githubusercontent.com/zhangx16/traffic-dog/main/port-traffic-stat.sh
-
-chmod +x /usr/local/bin/port-traffic-stat
-```
-
-安装开机服务并恢复规则：
-
-```sh
-port-traffic-stat install-service
-port-traffic-stat restore
-```
-
-Debian / Ubuntu systemd 可选启动命令：
-
-```sh
-systemctl daemon-reload
 systemctl enable --now port-traffic-stat
 ```
 
-## 交互式菜单
+Alpine 使用 `rc-service port-traffic-stat start`。
 
-直接运行：
+## 使用
 
-```sh
-port-traffic-stat
-```
+运行 `port-traffic-stat` 进入交互菜单，也可使用以下命令：
 
-或：
+| 命令（前缀均为 `port-traffic-stat`） | 功能 |
+| --- | --- |
+| `add 80 443 10000-10100` | 添加端口或端口段，支持逗号分隔 |
+| `del 80` | 删除端口及其统计和限额 |
+| `status` / `watch 2` | 查看统计 / 每 2 秒刷新 |
+| `limit 80 10G` | 设置端口 IN + OUT 总限额 |
+| `limit list` | 查看限额与使用量 |
+| `unlimit 80` | 取消限额并恢复不限流 |
+| `resume 80` / `resume all` | 保留限额，清零统计并恢复流量 |
+| `reset 80` / `reset all` | 清零指定或全部端口统计与限额使用量 |
+| `save` / `restore` | 保存当前计数 / 恢复规则 |
+| `flush` | 保存统计并移除规则 |
+| `install-service` | 安装开机服务 |
+| `update` | 更新脚本 |
+| `uninstall` | 卸载脚本与服务，保留数据 |
 
-```sh
-port-traffic-stat menu
-```
+限额支持 `500M`、`10G`、`1T` 或纯字节数，按 1024 换算。更多命令见 `port-traffic-stat --help`。
 
-会进入数字菜单，可通过输入数字执行常用功能：
+## 统计与数据
 
-```text
-1) Add/Set ports              添加统计端口
-2) Set port traffic limit     设置端口限额
-3) Show status                查看状态
-4) Show limits                查看限额
-5) Delete ports               删除端口
-6) Remove port limit          删除限额
-7) Resume paused port         恢复端口流量
-8) Reset statistics           清零统计
-9) Restore nftables rules     恢复规则
-10) Install dependencies      安装依赖
-11) Install script            安装脚本
-12) Install boot service      安装开机服务
-13) Update script             更新脚本
-14) Uninstall script/service  卸载脚本/服务
-15) Watch status              实时查看状态
-0) Exit                       退出
-```
+- `IN`：目标端口流量（input/forward）；`OUT`：源端口流量（output/forward）；`TOTAL`：两者之和。
+- `OPEN`：无限额；`LIMITED`：有限额；`PAUSED`：达到限额。
+- `RESET_AT`：最近一次清零时间。
+- 脚本路径：`/usr/local/bin/port-traffic-stat`。
+- 数据目录：`/etc/port-traffic-stat/`，包含 `ports`、`state`、`limits`、`used`。
 
-原有命令行方式仍然保留，适合脚本化调用。
+正常关机由已运行的服务保存统计，启动时恢复；当前没有定时保存，断电或强制重启会丢失上次保存后的数据。
 
-## 命令行使用
+脚本仅管理独立的 `inet port_traffic_stat` 表。其他防火墙工具若执行 `nft flush ruleset`，需重新运行 `port-traffic-stat restore`。端口统计不等同于网卡或云厂商账单，重叠端口范围可能重复计数。
 
-添加统计端口：
+## 测试
 
 ```sh
-port-traffic-stat add 80 443
+sh tests/regression.sh
 ```
 
-添加端口段：
-
-```sh
-port-traffic-stat add 10000-10100
-```
-
-查看统计：
-
-```sh
-port-traffic-stat status
-```
-
-实时刷新查看：
-
-```sh
-port-traffic-stat watch 2
-```
-
-删除端口：
-
-```sh
-port-traffic-stat del 80
-```
-
-清零全部统计：
-
-```sh
-port-traffic-stat reset all
-```
-
-清零指定端口：
-
-```sh
-port-traffic-stat reset 443
-```
-
-## 流量限额与自动暂停
-
-给端口设置总流量限额：
-
-```sh
-port-traffic-stat limit 80 10G
-```
-
-含义：端口 `80` 的 `IN + OUT` 达到 `10G` 后，`nftables` 会自动 drop 该端口后续 TCP/UDP 流量。
-
-也可以使用完整写法：
-
-```sh
-port-traffic-stat limit set 80 10G
-```
-
-查看限额：
-
-```sh
-port-traffic-stat limit list
-```
-
-移除限额并恢复不限流：
-
-```sh
-port-traffic-stat limit del 80
-```
-
-或：
-
-```sh
-port-traffic-stat unlimit 80
-```
-
-端口达到限额后，如果想重新放行并从 0 开始计算：
-
-```sh
-port-traffic-stat resume 80
-```
-
-恢复全部端口并重新计数：
-
-```sh
-port-traffic-stat resume all
-```
-
-支持的限额格式：
-
-```text
-500M
-10G
-1T
-1073741824
-```
-
-## 其他命令
-
-保存当前计数：
-
-```sh
-port-traffic-stat save
-```
-
-恢复 nftables 统计规则：
-
-```sh
-port-traffic-stat restore
-```
-
-卸载 nftables 规则，但保留历史统计：
-
-```sh
-port-traffic-stat flush
-```
-
-更新脚本：
-
-```sh
-port-traffic-stat update
-```
-
-卸载脚本和启动服务，保留统计数据目录：
-
-```sh
-port-traffic-stat uninstall
-```
-
-## 输出说明
-
-示例：
-
-```text
-PORT                         IN            OUT          TOTAL          LIMIT  STATE    RESET_AT
-----------------  --------------  -------------  -------------  -------------  -------- ------------------------
-80                      12.30MB        98.40MB       110.70MB        10.00GB  LIMITED  2026-07-06T20:00:00+0800
-443                      1.20GB         4.80GB         6.00GB        10.00GB  LIMITED  2026-07-06T20:00:00+0800
-10000-10100             500.00MB          0.00B       500.00MB       500.00MB PAUSED   2026-07-06T20:00:00+0800
-TOTAL                    1.70GB         4.90GB         6.60GB
-```
-
-字段含义：
-
-- `IN`：目标端口 `dport` 命中流量，包含 `input` / `forward`
-- `OUT`：源端口 `sport` 命中流量，包含 `output` / `forward`
-- `TOTAL`：`IN + OUT`
-- `LIMIT`：端口总流量限额，`-` 表示未设置
-- `STATE`：
-  - `OPEN`：未设置限额
-  - `LIMITED`：已设置限额，尚未达到
-  - `PAUSED`：已达到限额，端口流量已暂停
-- `RESET_AT`：该端口最近一次清零时间
-
-## 文件位置
-
-安装后：
-
-```text
-/usr/local/bin/port-traffic-stat
-/etc/port-traffic-stat/ports
-/etc/port-traffic-stat/state
-/etc/port-traffic-stat/limits
-/etc/port-traffic-stat/used
-/etc/init.d/port-traffic-stat                    # Alpine OpenRC 或 Debian SysV
-/etc/systemd/system/port-traffic-stat.service    # Debian/Ubuntu systemd
-```
-
-## Debian 注意事项
-
-Debian 默认也可以使用 `nftables`。如果系统同时运行其他防火墙管理器，例如 `ufw`、`firewalld` 或自定义 `/etc/nftables.conf`，本脚本会创建独立表：
-
-```text
-inet port_traffic_stat
-```
-
-不会修改系统已有防火墙表。若其他服务在运行中执行 `nft flush ruleset`，需要重新执行：
-
-```sh
-port-traffic-stat restore
-```
-
-或启用开机服务：
-
-```sh
-port-traffic-stat install-service
-systemctl enable --now port-traffic-stat
-```
-
-## 常见问题
-
-### 安装命令执行后没有任何反馈
-
-不要使用静默参数 `wget -qO-`，下载失败时它可能不显示任何错误。请使用：
-
-```sh
-wget -O- https://raw.githubusercontent.com/zhangx16/traffic-dog/main/install.sh | sh
-```
-
-或：
-
-```sh
-curl -fL https://raw.githubusercontent.com/zhangx16/traffic-dog/main/install.sh | sh
-```
-
-如果提示 `429 Too Many Requests`，说明 GitHub raw 对当前 IP 限流，改用 CDN：
-
-```sh
-wget -O- https://cdn.jsdelivr.net/gh/zhangx16/traffic-dog@main/install.sh | sh
-```
-
-安装后检查：
-
-```sh
-command -v port-traffic-stat
-ls -l /usr/local/bin/port-traffic-stat
-port-traffic-stat version
-```
-
-### chmod: port-traffic-stat.sh: No such file or directory
-
-说明当前目录没有脚本文件。推荐直接使用一键安装：
-
-```sh
-wget -O- https://raw.githubusercontent.com/zhangx16/traffic-dog/main/install.sh | sh
-```
-
-### rules not loaded
-
-执行：
-
-```sh
-port-traffic-stat restore
-```
-
-### 重启后统计规则消失
-
-Alpine / OpenRC：
-
-```sh
-port-traffic-stat install-service
-rc-service port-traffic-stat start
-```
-
-Debian / systemd：
-
-```sh
-port-traffic-stat install-service
-systemctl start port-traffic-stat
-```
-
-### 达到限额后如何恢复端口流量
-
-保留限额、重新从 0 开始：
-
-```sh
-port-traffic-stat resume 80
-```
-
-取消限额、不再暂停：
-
-```sh
-port-traffic-stat unlimit 80
-```
+测试不需要 root，不操作真实防火墙。覆盖计数保留、重复恢复、端口删除及参数校验；GitHub Actions 在 dash 和 BusyBox ash 下运行。真实内核限额行为需在 Linux 环境另行验证。
 
 ## 参考
 
 - [zywe03/realm-xwPF](https://github.com/zywe03/realm-xwPF)
 - [port-traffic-dog.sh](https://github.com/zywe03/realm-xwPF/blob/main/port-traffic-dog.sh)
-- [nftables nft 手册：quota 语法](https://www.mankier.com/8/nft)
+- [nftables quota 文档](https://wiki.nftables.org/wiki-nftables/index.php/Quotas)
