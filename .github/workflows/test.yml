@@ -8,7 +8,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install BusyBox
-        run: sudo apt-get update && sudo apt-get install -y busybox
+        run: sudo apt-get install -y --no-install-recommends busybox
       - name: Check POSIX shell syntax
         run: |
           dash -n port-traffic-stat.sh
