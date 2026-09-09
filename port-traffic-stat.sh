@@ -43,7 +43,9 @@ with_lock() {
         [ "$i" -le 30 ] || die "failed to acquire lock: $LOCK_DIR"
         sleep 1
     done
-    trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT INT TERM
+    trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
 }
 
 ensure_files() {
@@ -100,7 +102,7 @@ split_port_args() {
         printf '%s\n' "$arg" | tr ',' '\n' | while IFS= read -r item; do
             [ -n "$item" ] || continue
             normalize_port_spec "$item" || die "invalid port: $item"
-        done
+        done || return 1
     done
 }
 
@@ -511,13 +513,13 @@ print_status() {
 
 cmd_add() {
     [ "$#" -ge 1 ] || die "usage: $0 add 80 443 10000-10100"
+    ports_list=$(split_port_args "$@") || die "invalid port list"
     need_root
     need_nft
     with_lock
     ensure_files
     save_all_snapshots
 
-    ports_list=$(split_port_args "$@")
     for p in $ports_list; do
         if grep -qxF "$p" "$PORTS_FILE" 2>/dev/null; then
             echo "exists: $p"
@@ -537,20 +539,20 @@ cmd_add() {
 
 cmd_del() {
     [ "$#" -ge 1 ] || die "usage: $0 del 80 443"
+    ports_list=$(split_port_args "$@") || die "invalid port list"
     need_root
     need_nft
     with_lock
     ensure_files
     save_all_snapshots
 
-    tmp="$PORTS_FILE.$$"
-    cp "$PORTS_FILE" "$tmp"
+    delete_ports_tmp="$PORTS_FILE.delete.$$"
+    cp "$PORTS_FILE" "$delete_ports_tmp"
 
-    ports_list=$(split_port_args "$@")
     for p in $ports_list; do
-        if grep -qxF "$p" "$tmp" 2>/dev/null; then
-            awk -v x="$p" '$1 != x { print }' "$tmp" > "$tmp.new"
-            mv "$tmp.new" "$tmp"
+        if grep -qxF "$p" "$delete_ports_tmp" 2>/dev/null; then
+            awk -v x="$p" '$1 != x { print }' "$delete_ports_tmp" > "$delete_ports_tmp.new"
+            mv "$delete_ports_tmp.new" "$delete_ports_tmp"
             remove_state_line "$p"
             limit_remove "$p"
             echo "deleted: $p"
@@ -559,7 +561,7 @@ cmd_del() {
         fi
     done
 
-    mv "$tmp" "$PORTS_FILE"
+    mv "$delete_ports_tmp" "$PORTS_FILE"
     rebuild_nft_rules
 }
 
@@ -591,12 +593,12 @@ cmd_limit() {
         del|delete|remove|off|unset)
             shift
             [ "$#" -ge 1 ] || die "usage: $0 limit del PORT [PORT...]"
+            ports_list=$(split_port_args "$@") || die "invalid port list"
             need_root
             need_nft
             with_lock
             ensure_files
             save_all_snapshots
-            ports_list=$(split_port_args "$@")
             for p in $ports_list; do
                 limit_remove "$p"
                 echo "limit removed: $p"
@@ -660,9 +662,12 @@ cmd_resume() {
         return 0
     fi
 
-    ports_list=$(split_port_args "$@")
+    ports_list=$(split_port_args "$@") || die "invalid port list"
     for p in $ports_list; do
         grep -qxF "$p" "$PORTS_FILE" 2>/dev/null || die "port not added: $p"
+    done
+    save_all_snapshots
+    for p in $ports_list; do
         set_state_line "$p" 0 0 "$(now_iso)"
         used_set_bytes "$p" 0
         echo "resumed: $p"
@@ -688,9 +693,12 @@ cmd_reset() {
         return 0
     fi
 
-    ports_list=$(split_port_args "$@")
+    ports_list=$(split_port_args "$@") || die "invalid port list"
     for p in $ports_list; do
         grep -qxF "$p" "$PORTS_FILE" 2>/dev/null || die "port not added: $p"
+    done
+    save_all_snapshots
+    for p in $ports_list; do
         set_state_line "$p" 0 0 "$(now_iso)"
         used_set_bytes "$p" 0
         echo "reset: $p"
@@ -703,6 +711,7 @@ cmd_restore() {
     need_nft
     with_lock
     ensure_files
+    save_all_snapshots
     rebuild_nft_rules
     echo "restored nftables rules."
 }
@@ -732,6 +741,7 @@ cmd_watch() {
     case "$interval" in
         ''|*[!0-9]*) die "interval must be seconds" ;;
     esac
+    [ "$interval" -gt 0 ] || die "interval must be greater than zero"
     while :; do
         clear 2>/dev/null || true
         date
